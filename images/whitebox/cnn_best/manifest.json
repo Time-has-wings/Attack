@@ -1,5 +1,6 @@
 {
   "checkpoint": "/Users/timehaswings/PKU/2026_spring/深度学习技术与应用/Fashion-MNIST/model/cnn_best.ckpt",
+  "sample_source": "test_set",
   "test_accuracy": 90.53,
   "num_attacked": 1000,
   "attack": {
@@ -10,6 +11,8 @@
     "target_mapping": "y -> (y + 1) % 10"
   },
   "success_rate_percent": 99.7,
+  "num_successful": 997,
+  "successful_samples_pkl": "/Users/timehaswings/PKU/2026_spring/深度学习技术与应用/Fashion-MNIST/attack_data/best_whitebox_sample.pkl",
   "samples": [
     {
       "orig_image": "sample_00_orig.png",
