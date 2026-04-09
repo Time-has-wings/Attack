@@ -62,7 +62,7 @@ def main():
     torch.manual_seed(seed)
     device = torch.device("cpu")
 
-    adv_pkl   = "../attack_data/best_whitebox_sample.pkl"
+    adv_pkl   = "../attack_data/best_whitebox_train_sample.pkl"
     save_path = "../model/cnn_adv.ckpt"
     os.makedirs("../model", exist_ok=True)
 

@@ -7,12 +7,15 @@ Attack: targeted PGD (iterative projected gradient descent) with random start.
 Target mapping: orig_class -> (orig_class + 1) % 10  (table I in writeup).
 
 Checkpoint-dependent behaviour:
-  - cnn_best.ckpt : collect 1000 correctly classified test images on the fly,
-                    save successful adversarial samples to best_whitebox_sample.pkl
-  - cnn.ckpt      : load 1000 samples from ../attack_data/correct_1k.pkl,
-                    save successful adversarial samples to whitebox_sample.pkl
-  - cnn_adv.ckpt  : collect 1000 correctly classified test images on the fly,
-                    only report attack success rate, no pkl/image output.
+  - cnn_best.ckpt      : collect 1000 correctly classified TEST images on the fly,
+                         save successful adversarial samples to best_whitebox_sample.pkl
+  - cnn_best_train.ckpt: collect 1000 correctly classified TRAIN images on the fly,
+                         save successful adversarial samples to best_whitebox_train_sample.pkl
+                         (实际加载的仍是 cnn_best.ckpt，通过 --ckpt_tag 区分模式)
+  - cnn.ckpt           : load 1000 samples from ../attack_data/correct_1k.pkl,
+                         save successful adversarial samples to whitebox_sample.pkl
+  - cnn_adv.ckpt       : collect 1000 correctly classified test images on the fly,
+                         only report attack success rate, no pkl/image output.
 
 Outputs:
   - test accuracy of the classifier
@@ -45,13 +48,13 @@ CLASS_NAMES = [
     "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot",
 ]
 
-# Routing table: ckpt basename -> (sample source, output pkl name)
-# sample source 为 "test_set" 表示从测试集在线收集；为路径则从 pkl 加载
-# output pkl name 为 None 表示该模式不保存 pkl
+# ckpt_tag -> (实际加载的 ckpt 文件, 样本来源, pkl 输出名, 是否仅评估)
+# 样本来源: "test_set" | "train_set" | pkl路径
 CKPT_CONFIG = {
-    "cnn_best.ckpt": ("test_set",                      "best_whitebox_sample.pkl"),
-    "cnn.ckpt":      ("../attack_data/correct_1k.pkl", "whitebox_sample.pkl"),
-    "cnn_adv.ckpt":  ("test_set",                      None),   # 仅评估，不保存
+    "cnn_best":       ("../model/cnn_best.ckpt", "test_set",                      "best_whitebox_sample.pkl",       False),
+    "cnn_best_train": ("../model/cnn_best.ckpt", "train_set",                     "best_whitebox_train_sample.pkl", False),
+    "cnn":            ("../model/cnn.ckpt",       "../attack_data/correct_1k.pkl", "whitebox_sample.pkl",            False),
+    "cnn_adv":        ("../model/cnn_adv.ckpt",   "test_set",                      None,                            True),
 }
 
 
@@ -71,7 +74,7 @@ def evaluate(classifier, loader, device):
 
 
 def collect_correct_from_loader(classifier, loader, device, num=1000):
-    """Collect `num` test images correctly classified by the model."""
+    """Collect `num` images correctly classified by the model from any loader."""
     classifier.eval()
     xs, ys = [], []
     with torch.no_grad():
@@ -140,13 +143,20 @@ def attack_in_batches(classifier, x_all, y_target_all, device,
     return torch.cat(advs, dim=0), torch.cat(preds, dim=0)
 
 
-def save_successful_pkl(adv_samples, adv_labels, pkl_path):
-    """Save successful adversarial samples as [x_array, y_array] pickle."""
+def save_successful_pkl(adv_samples, true_labels, pkl_path):
+    """
+    保存攻击成功的对抗样本。
+    标签使用原始真实标签（true_labels），而非攻击目标标签，
+    确保对抗训练时模型学到"这张图的正确答案"而不是强化错误分类。
+
+    格式：[x_array (N,784) float32, y_array (N,) int64]
+    """
     x_np = adv_samples.numpy().astype(np.float32)
-    y_np = adv_labels.numpy().astype(np.int64)
+    y_np = true_labels.numpy().astype(np.int64)
     with open(pkl_path, "wb") as f:
         pickle.dump([x_np, y_np], f)
     print(f"[info] saved {len(x_np)} successful adversarial samples -> {pkl_path}")
+    print(f"[info] labels are TRUE labels (for adversarial training)")
 
 
 def save_sample_grid(originals, adversarials, orig_preds, adv_preds, out_path):
@@ -172,9 +182,16 @@ def save_sample_grid(originals, adversarials, orig_preds, adv_preds, out_path):
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt", type=str, default="../model/cnn_best.ckpt")
+    parser.add_argument("--ckpt_tag", type=str, default="cnn_best",
+                        choices=list(CKPT_CONFIG.keys()),
+                        help=(
+                            "cnn_best       : attack cnn_best.ckpt using test set\n"
+                            "cnn_best_train : attack cnn_best.ckpt using train set\n"
+                            "cnn            : attack cnn.ckpt using correct_1k.pkl\n"
+                            "cnn_adv        : attack cnn_adv.ckpt, report only"
+                        ))
     parser.add_argument("--num_samples", type=int, default=1000)
-    parser.add_argument("--eps",   type=float, default=40.0)
+    parser.add_argument("--eps",   type=float, default=10.0)
     parser.add_argument("--alpha", type=float, default=2.0)
     parser.add_argument("--steps", type=int,   default=100)
     parser.add_argument("--out_dir", type=str, default="../images/whitebox")
@@ -183,9 +200,9 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    ckpt_base = os.path.basename(args.ckpt)
-    ckpt_tag  = ckpt_base.replace(".ckpt", "")   # "cnn_best" / "cnn" / "cnn_adv"
-    args.out_dir = os.path.join(args.out_dir, ckpt_tag)
+    ckpt_path, sample_source, pkl_name, eval_only = CKPT_CONFIG[args.ckpt_tag]
+
+    args.out_dir = os.path.join(args.out_dir, args.ckpt_tag)
     os.makedirs(args.out_dir, exist_ok=True)
     os.makedirs(args.pkl_dir, exist_ok=True)
     random.seed(args.seed)
@@ -193,16 +210,8 @@ def main():
     torch.manual_seed(args.seed)
     device = torch.device("cpu")
 
-    # Resolve checkpoint -> sample source + output pkl name
-    if ckpt_base not in CKPT_CONFIG:
-        raise ValueError(
-            f"Unrecognised checkpoint '{ckpt_base}'. "
-            f"Expected one of: {list(CKPT_CONFIG.keys())}"
-        )
-    sample_source, pkl_name = CKPT_CONFIG[ckpt_base]
-    eval_only = (pkl_name is None)   # cnn_adv 模式：仅评估，不保存任何文件
-
-    print(f"[info] checkpoint    = {args.ckpt}")
+    print(f"[info] ckpt_tag      = {args.ckpt_tag}")
+    print(f"[info] checkpoint    = {ckpt_path}")
     print(f"[info] sample source = {sample_source}")
     if eval_only:
         print(f"[info] mode          = eval-only (no pkl / image output)")
@@ -211,21 +220,26 @@ def main():
 
     # Load classifier
     classifier = CNN().to(device)
-    classifier.load_state_dict(torch.load(args.ckpt, map_location=device))
+    classifier.load_state_dict(torch.load(ckpt_path, map_location=device))
     classifier.eval()
 
-    # Load test set
-    _, _, test_set = load_fashion_mnist("../data", random=random)
-    test_loader = DataLoader(test_set, batch_size=1000)
+    # Load datasets
+    train_set, dev_set, test_set = load_fashion_mnist("../data", random=random)
+    test_loader  = DataLoader(test_set,  batch_size=1000)
+    train_loader = DataLoader(train_set, batch_size=1000, shuffle=False)
 
     test_acc = evaluate(classifier, test_loader, device)
     print(f"[info] test accuracy = {test_acc:.2f}%")
 
-    # --- 1) Obtain 1000 correctly classified samples ---------------------
+    # --- 1) Obtain correctly classified samples --------------------------
     if sample_source == "test_set":
         x_correct, y_correct = collect_correct_from_loader(
             classifier, test_loader, device, num=args.num_samples)
         print(f"[info] collected {x_correct.shape[0]} correct samples from test set")
+    elif sample_source == "train_set":
+        x_correct, y_correct = collect_correct_from_loader(
+            classifier, train_loader, device, num=args.num_samples)
+        print(f"[info] collected {x_correct.shape[0]} correct samples from train set")
     else:
         x_correct, y_correct = load_samples_from_pkl(sample_source)
         print(f"[info] loaded {x_correct.shape[0]} samples from {sample_source}")
@@ -252,7 +266,7 @@ def main():
     success_idx_all = success_mask.nonzero(as_tuple=False).flatten()
     save_successful_pkl(
         adv[success_idx_all],
-        y_correct[success_idx_all],
+        y_correct[success_idx_all],   # 真实标签，用于对抗训练
         pkl_out,
     )
 
@@ -274,7 +288,8 @@ def main():
     print(f"[info] saved grid figure to {grid_path}")
 
     manifest = {
-        "checkpoint": os.path.abspath(args.ckpt),
+        "ckpt_tag": args.ckpt_tag,
+        "checkpoint": os.path.abspath(ckpt_path),
         "sample_source": sample_source,
         "test_accuracy": test_acc,
         "num_attacked": int(x_correct.shape[0]),
@@ -288,6 +303,7 @@ def main():
         "success_rate_percent": success_rate,
         "num_successful": int(success_mask.sum().item()),
         "successful_samples_pkl": os.path.abspath(pkl_out),
+        "pkl_label_type": "true label (for adversarial training)",
         "samples": [],
     }
     for k, idx in enumerate(pick):
