@@ -43,6 +43,13 @@ CLASS_NAMES = [
     "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot",
 ]
 
+# target 名称 -> (checkpoint路径, 样本来源, pkl输出名, 是否只打印成功率)
+TARGET_CONFIG = {
+    "provided": ("../model/cnn.ckpt",      "pkl",      "blackbox_sample.pkl",      False),
+    "own":      ("../model/cnn_best.ckpt", "test_set", "best_blackbox_sample.pkl", False),
+    "adv":      ("../model/cnn_adv.ckpt",  "test_set", None,                       True),
+}
+
 
 # ---------------------------------------------------------------------------
 # Black-box wrapper
@@ -69,43 +76,28 @@ class BlackBox:
 
 
 # ---------------------------------------------------------------------------
-# MCMC attack（题目准则 + 最小必要修复）
+# MCMC attack
 # ---------------------------------------------------------------------------
 def mcmc_attack(black_box, x_orig, y_target,
                 eps=40.0, steps=3000,
                 sigma=4.0, delta_max=15.0):
-    """
-    严格按题目描述的 MCMC 黑盒攻击，加入最小必要修复：
-
-    题目接受准则：u ~ U(0,1)，若 u < C(x')[y_target] 则接受
-    最小修复    ：若 C(x')[y_target] >= C(x^(n))[y_target]，必然接受
-                  （确保链能上坡，否则置信度极低时链完全卡死）
-    单步约束    ：若 L_inf(x', x^(n)) > delta_max，直接拒绝
-    自适应 sigma：每 adapt_interval 步根据接受率调整
-    """
-    # Step 1: x^(0) = x_orig
     x_cur = x_orig.clone()
     p_cur = black_box.predict(x_cur.unsqueeze(0))[0, y_target].item()
 
     best_x = x_cur.clone()
     best_p = p_cur
 
-    # 自适应步长
     cur_sigma = sigma
     accept_window = []
     adapt_interval = 100
 
     for step in range(steps):
 
-        # Step 2: 产生候选样本 x' ~ N(x^(n), sigma^2 * I)
         noise = torch.randn_like(x_cur) * cur_sigma
-        # mask = (x_orig > 30).float()
         x_prop = x_cur + noise
 
-        # Step 3: 单步变化阈值 D(x', x^(n)) > delta_max 则直接拒绝
         if (x_prop - x_cur).abs().max().item() > delta_max:
             accept_window.append(0)
-            # 自适应：步子太大被拒太多，缩小 sigma
             if len(accept_window) == adapt_interval:
                 rate = sum(accept_window) / adapt_interval
                 accept_window = []
@@ -115,20 +107,16 @@ def mcmc_attack(black_box, x_orig, y_target,
                     cur_sigma = min(cur_sigma * 1.2, eps)
             continue
 
-        # 投影回全局 eps 球 + 有效像素范围
         x_prop = torch.max(torch.min(x_prop, x_orig + eps), x_orig - eps)
         x_prop = torch.clamp(x_prop, 0.0, 255.0)
 
-        # 查询分类器
         p_prop = black_box.predict(x_prop.unsqueeze(0))[0, y_target].item()
 
-        # Step 4: 接受准则
-        # 最小修复：上坡必然接受；下坡按题目准则 u < C(x')[y_target]
         if p_prop >= p_cur:
             accepted = True
         else:
             u = random.random()
-            accepted = (u < p_prop)   # 题目原文准则
+            accepted = (u < p_prop)
 
         accept_window.append(int(accepted))
 
@@ -139,7 +127,6 @@ def mcmc_attack(black_box, x_orig, y_target,
                 best_x = x_cur.clone()
                 best_p = p_cur
 
-        # 自适应 sigma
         if len(accept_window) == adapt_interval:
             rate = sum(accept_window) / adapt_interval
             accept_window = []
@@ -148,19 +135,16 @@ def mcmc_attack(black_box, x_orig, y_target,
             elif rate < 0.10:
                 cur_sigma = max(cur_sigma * 0.8, 0.5)
 
-        # Step 5: 收敛检查（每20步）
         if step % 20 == 0:
             if black_box.predict_label(x_cur.unsqueeze(0)).item() == y_target:
                 return x_cur, True
 
-    # Step 6: 返回历史最优
     success = (black_box.predict_label(best_x.unsqueeze(0)).item() == y_target)
     return best_x, success
 
 
 def mcmc_attack_all(black_box, x_all, y_target_all,
                     eps=40.0, steps=3000, sigma=4.0, delta_max=15.0):
-    """对所有样本依次独立运行 MCMC 攻击。"""
     advs, preds = [], []
     n = x_all.shape[0]
     n_success = 0
@@ -249,13 +233,6 @@ def save_sample_grid(originals, adversarials, orig_labels, adv_preds, out_path,
 
 
 def save_successful_samples_pkl(adv, bb_preds, success_mask, out_path):
-    """
-    将所有攻击成功的样例保存为 pkl 文件。
-
-    pkl 内容为 [x_array, y_array]，与白盒攻击输出格式完全一致：
-        x_array: shape (N_succ, 784), float32, 对抗样例
-        y_array: shape (N_succ,),     int64,   黑盒对对抗样例的预测标签（即目标标签）
-    """
     succ_idx = success_mask.nonzero(as_tuple=False).flatten()
     x_np = adv[succ_idx].numpy().astype(np.float32)
     y_np = bb_preds[succ_idx].numpy().astype(np.int64)
@@ -268,15 +245,15 @@ def save_successful_samples_pkl(adv, bb_preds, success_mask, out_path):
 # 主运行逻辑
 # ---------------------------------------------------------------------------
 def run(target, args, device):
-    if target == "provided":
-        bb_ckpt = "../model/cnn.ckpt"
-        out_dir = os.path.join(args.out_dir, "provided")
-        print(f"\n=== Scenario: black-box = provided cnn.ckpt ===")
+    bb_ckpt, sample_source, pkl_name, report_only = TARGET_CONFIG[target]
+    out_dir = os.path.join(args.out_dir, target)
+
+    print(f"\n=== Scenario: black-box = {bb_ckpt} ===")
+
+    # ── 加载样本 ────────────────────────────────────────────────────────────
+    if sample_source == "pkl":
         x_orig, y_orig = load_provided_samples("../attack_data/correct_1k.pkl")
-    elif target == "own":
-        bb_ckpt = "../model/cnn_best.ckpt"
-        out_dir = os.path.join(args.out_dir, "own")
-        print(f"\n=== Scenario: black-box = own cnn_best.ckpt ===")
+    else:
         tmp = CNN().to(device)
         tmp.load_state_dict(torch.load(bb_ckpt, map_location=device))
         tmp.eval()
@@ -284,8 +261,6 @@ def run(target, args, device):
             tmp, device, num=args.num_samples, seed=args.seed
         )
         del tmp
-    else:
-        raise ValueError(target)
 
     os.makedirs(out_dir, exist_ok=True)
 
@@ -321,8 +296,11 @@ def run(target, args, device):
           f"{final_success.sum().item()}/{len(final_success)} = {final_rate:.2f}%")
     print(f"[info] total black-box queries = {black_box.num_queries:,}")
 
+    # ── adv 场景：只报告成功率，不保存任何文件 ──────────────────────────────
+    if report_only:
+        return final_rate
+
     # ── 保存所有攻击成功的样例为 pkl ────────────────────────────────────────
-    pkl_name = "best_blackbox_sample.pkl" if target == "own" else "blackbox_sample.pkl"
     pkl_path = os.path.join(args.pkl_dir, pkl_name)
     save_successful_samples_pkl(adv, bb_preds, final_success, pkl_path)
 
@@ -405,7 +383,8 @@ def main():
         description="MCMC black-box attack (assignment description + minimal fix)"
     )
     parser.add_argument(
-        "--target", choices=["provided", "own", "both"], default="both"
+        "--target", choices=["provided", "own", "adv", "both"], default="both",
+        help="'both' runs provided + own; 'adv' attacks cnn_adv.ckpt (report only)"
     )
     parser.add_argument("--num_samples", type=int,   default=1000)
     parser.add_argument("--eps",         type=float, default=40.0,
@@ -429,8 +408,10 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
     os.makedirs(args.pkl_dir, exist_ok=True)
 
-    summary = {}
+    # "both" 只跑 provided + own，不含 adv
     targets = ["provided", "own"] if args.target == "both" else [args.target]
+
+    summary = {}
     for t in targets:
         summary[t] = run(t, args, device)
 

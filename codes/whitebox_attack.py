@@ -11,12 +11,15 @@ Checkpoint-dependent behaviour:
                     save successful adversarial samples to best_whitebox_sample.pkl
   - cnn.ckpt      : load 1000 samples from ../attack_data/correct_1k.pkl,
                     save successful adversarial samples to whitebox_sample.pkl
+  - cnn_adv.ckpt  : collect 1000 correctly classified test images on the fly,
+                    only report attack success rate, no pkl/image output.
 
 Outputs:
   - test accuracy of the classifier
   - white-box attack success rate
   - 10 randomly chosen successful (orig, adv) pairs as PNG images + JSON manifest
   - pkl file with all successful adversarial samples
+  (last two outputs are skipped for cnn_adv.ckpt)
 """
 import os
 import json
@@ -43,9 +46,12 @@ CLASS_NAMES = [
 ]
 
 # Routing table: ckpt basename -> (sample source, output pkl name)
+# sample source 为 "test_set" 表示从测试集在线收集；为路径则从 pkl 加载
+# output pkl name 为 None 表示该模式不保存 pkl
 CKPT_CONFIG = {
     "cnn_best.ckpt": ("test_set",                      "best_whitebox_sample.pkl"),
     "cnn.ckpt":      ("../attack_data/correct_1k.pkl", "whitebox_sample.pkl"),
+    "cnn_adv.ckpt":  ("test_set",                      None),   # 仅评估，不保存
 }
 
 
@@ -178,8 +184,8 @@ def main():
     args = parser.parse_args()
 
     ckpt_base = os.path.basename(args.ckpt)
-    ckpt_tag = ckpt_base.replace(".ckpt", "")   # "cnn_best" 或 "cnn"
-    args.out_dir  = os.path.join(args.out_dir, ckpt_tag)
+    ckpt_tag  = ckpt_base.replace(".ckpt", "")   # "cnn_best" / "cnn" / "cnn_adv"
+    args.out_dir = os.path.join(args.out_dir, ckpt_tag)
     os.makedirs(args.out_dir, exist_ok=True)
     os.makedirs(args.pkl_dir, exist_ok=True)
     random.seed(args.seed)
@@ -188,25 +194,27 @@ def main():
     device = torch.device("cpu")
 
     # Resolve checkpoint -> sample source + output pkl name
-    ckpt_base = os.path.basename(args.ckpt)
     if ckpt_base not in CKPT_CONFIG:
         raise ValueError(
             f"Unrecognised checkpoint '{ckpt_base}'. "
             f"Expected one of: {list(CKPT_CONFIG.keys())}"
         )
     sample_source, pkl_name = CKPT_CONFIG[ckpt_base]
-    pkl_out = os.path.join(args.pkl_dir, pkl_name)
+    eval_only = (pkl_name is None)   # cnn_adv 模式：仅评估，不保存任何文件
 
     print(f"[info] checkpoint    = {args.ckpt}")
     print(f"[info] sample source = {sample_source}")
-    print(f"[info] output pkl    = {pkl_out}")
+    if eval_only:
+        print(f"[info] mode          = eval-only (no pkl / image output)")
+    else:
+        print(f"[info] output pkl    = {os.path.join(args.pkl_dir, pkl_name)}")
 
     # Load classifier
     classifier = CNN().to(device)
     classifier.load_state_dict(torch.load(args.ckpt, map_location=device))
     classifier.eval()
 
-    # Load test set (needed for evaluation and, for cnn_best.ckpt, sample collection)
+    # Load test set
     _, _, test_set = load_fashion_mnist("../data", random=random)
     test_loader = DataLoader(test_set, batch_size=1000)
 
@@ -215,12 +223,10 @@ def main():
 
     # --- 1) Obtain 1000 correctly classified samples ---------------------
     if sample_source == "test_set":
-        # cnn_best.ckpt: collect from the test set on the fly
         x_correct, y_correct = collect_correct_from_loader(
             classifier, test_loader, device, num=args.num_samples)
         print(f"[info] collected {x_correct.shape[0]} correct samples from test set")
     else:
-        # cnn.ckpt: load from the provided pkl file
         x_correct, y_correct = load_samples_from_pkl(sample_source)
         print(f"[info] loaded {x_correct.shape[0]} samples from {sample_source}")
 
@@ -236,7 +242,13 @@ def main():
     print(f"[result] white-box targeted PGD success rate = "
           f"{success_mask.sum().item()}/{len(success_mask)} = {success_rate:.2f}%")
 
+    # --- cnn_adv 模式：只报告成功率，直接返回 ----------------------------
+    if eval_only:
+        print(f"[done] test_acc={test_acc:.2f}% | attack_success={success_rate:.2f}%")
+        return
+
     # --- 3) Save ALL successful adversarial samples to pkl ---------------
+    pkl_out = os.path.join(args.pkl_dir, pkl_name)
     success_idx_all = success_mask.nonzero(as_tuple=False).flatten()
     save_successful_pkl(
         adv[success_idx_all],
