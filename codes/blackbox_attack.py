@@ -99,6 +99,7 @@ def mcmc_attack(black_box, x_orig, y_target,
 
         # Step 2: 产生候选样本 x' ~ N(x^(n), sigma^2 * I)
         noise = torch.randn_like(x_cur) * cur_sigma
+        # mask = (x_orig > 30).float()
         x_prop = x_cur + noise
 
         # Step 3: 单步变化阈值 D(x', x^(n)) > delta_max 则直接拒绝
@@ -247,6 +248,22 @@ def save_sample_grid(originals, adversarials, orig_labels, adv_preds, out_path,
     plt.close(fig)
 
 
+def save_successful_samples_pkl(adv, bb_preds, success_mask, out_path):
+    """
+    将所有攻击成功的样例保存为 pkl 文件。
+
+    pkl 内容为 [x_array, y_array]，与白盒攻击输出格式完全一致：
+        x_array: shape (N_succ, 784), float32, 对抗样例
+        y_array: shape (N_succ,),     int64,   黑盒对对抗样例的预测标签（即目标标签）
+    """
+    succ_idx = success_mask.nonzero(as_tuple=False).flatten()
+    x_np = adv[succ_idx].numpy().astype(np.float32)
+    y_np = bb_preds[succ_idx].numpy().astype(np.int64)
+    with open(out_path, "wb") as f:
+        pickle.dump([x_np, y_np], f)
+    print(f"[info] saved {len(succ_idx)} successful adversarial samples to {out_path}")
+
+
 # ---------------------------------------------------------------------------
 # 主运行逻辑
 # ---------------------------------------------------------------------------
@@ -304,6 +321,11 @@ def run(target, args, device):
           f"{final_success.sum().item()}/{len(final_success)} = {final_rate:.2f}%")
     print(f"[info] total black-box queries = {black_box.num_queries:,}")
 
+    # ── 保存所有攻击成功的样例为 pkl ────────────────────────────────────────
+    pkl_name = "best_blackbox_sample.pkl" if target == "own" else "blackbox_sample.pkl"
+    pkl_path = os.path.join(args.pkl_dir, pkl_name)
+    save_successful_samples_pkl(adv, bb_preds, final_success, pkl_path)
+
     # ── 保存样本网格 ────────────────────────────────────────────────────────
     success_idx = final_success.nonzero(as_tuple=False).flatten().tolist()
     random.Random(args.seed).shuffle(success_idx)
@@ -342,6 +364,7 @@ def run(target, args, device):
         },
         "final_success_rate_percent": final_rate,
         "black_box_queries": int(black_box.num_queries),
+        "successful_samples_pkl": os.path.basename(pkl_path),
         "samples": [],
     }
 
@@ -387,13 +410,15 @@ def main():
     parser.add_argument("--num_samples", type=int,   default=1000)
     parser.add_argument("--eps",         type=float, default=40.0,
                         help="Global L_inf budget in pixel units [0,255]")
-    parser.add_argument("--mcmc_steps",  type=int,   default=10000,
+    parser.add_argument("--mcmc_steps",  type=int,   default=13000,
                         help="Max MCMC iterations per sample")
     parser.add_argument("--mcmc_sigma",  type=float, default=4.0,
                         help="Initial Gaussian proposal std (auto-adapted)")
     parser.add_argument("--delta_max",   type=float, default=15.0,
                         help="Single-step L_inf change threshold")
     parser.add_argument("--out_dir",     type=str,   default="../images/blackbox")
+    parser.add_argument("--pkl_dir",     type=str,   default="../attack_data",
+                        help="Directory where output pkl files are written")
     parser.add_argument("--seed",        type=int,   default=42)
     args = parser.parse_args()
 
@@ -402,6 +427,7 @@ def main():
     torch.manual_seed(args.seed)
     device = torch.device("cpu")
     os.makedirs(args.out_dir, exist_ok=True)
+    os.makedirs(args.pkl_dir, exist_ok=True)
 
     summary = {}
     targets = ["provided", "own"] if args.target == "both" else [args.target]
