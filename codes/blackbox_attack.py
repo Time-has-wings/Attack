@@ -232,13 +232,21 @@ def save_sample_grid(originals, adversarials, orig_labels, adv_preds, out_path,
     plt.close(fig)
 
 
-def save_successful_samples_pkl(adv, bb_preds, success_mask, out_path):
+def save_successful_samples_pkl(adv, true_labels, success_mask, out_path):
+    """
+    保存攻击成功的对抗样本。
+    标签使用原始真实标签（true_labels），而非攻击目标标签，
+    确保对抗训练时模型学到"这张图的正确答案"而不是强化错误分类。
+
+    格式：[x_array (N_succ,784) float32, y_array (N_succ,) int64]
+    """
     succ_idx = success_mask.nonzero(as_tuple=False).flatten()
     x_np = adv[succ_idx].numpy().astype(np.float32)
-    y_np = bb_preds[succ_idx].numpy().astype(np.int64)
+    y_np = true_labels[succ_idx].numpy().astype(np.int64)
     with open(out_path, "wb") as f:
         pickle.dump([x_np, y_np], f)
     print(f"[info] saved {len(succ_idx)} successful adversarial samples to {out_path}")
+    print(f"[info] labels are TRUE labels (for adversarial training)")
 
 
 # ---------------------------------------------------------------------------
@@ -302,7 +310,7 @@ def run(target, args, device):
 
     # ── 保存所有攻击成功的样例为 pkl ────────────────────────────────────────
     pkl_path = os.path.join(args.pkl_dir, pkl_name)
-    save_successful_samples_pkl(adv, bb_preds, final_success, pkl_path)
+    save_successful_samples_pkl(adv, y_orig, final_success, pkl_path)  # ← 真实标签
 
     # ── 保存样本网格 ────────────────────────────────────────────────────────
     success_idx = final_success.nonzero(as_tuple=False).flatten().tolist()
@@ -343,6 +351,7 @@ def run(target, args, device):
         "final_success_rate_percent": final_rate,
         "black_box_queries": int(black_box.num_queries),
         "successful_samples_pkl": os.path.basename(pkl_path),
+        "pkl_label_type": "true label (for adversarial training)",
         "samples": [],
     }
 

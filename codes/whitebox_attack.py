@@ -252,7 +252,7 @@ def main():
     success_idx_all = success_mask.nonzero(as_tuple=False).flatten()
     save_successful_pkl(
         adv[success_idx_all],
-        adv_pred[success_idx_all],
+        y_correct[success_idx_all],
         pkl_out,
     )
 
