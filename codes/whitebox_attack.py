@@ -191,7 +191,7 @@ def main():
                             "cnn_adv        : attack cnn_adv.ckpt, report only"
                         ))
     parser.add_argument("--num_samples", type=int, default=1000)
-    parser.add_argument("--eps",   type=float, default=10.0)
+    parser.add_argument("--eps",   type=float, default=20.0)
     parser.add_argument("--alpha", type=float, default=2.0)
     parser.add_argument("--steps", type=int,   default=100)
     parser.add_argument("--out_dir", type=str, default="../images/whitebox")
