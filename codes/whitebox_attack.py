@@ -54,7 +54,7 @@ CKPT_CONFIG = {
     "cnn_best":       ("../model/cnn_best.ckpt", "test_set",                      "best_whitebox_sample.pkl",       False),
     "cnn_best_train": ("../model/cnn_best.ckpt", "train_set",                     "best_whitebox_train_sample.pkl", False),
     "cnn":            ("../model/cnn.ckpt",       "../attack_data/correct_1k.pkl", "whitebox_sample.pkl",            False),
-    "cnn_adv":        ("../model/cnn_adv.ckpt",   "test_set",                      None,                            True),
+    "cnn_adv":        ("../model/cnn_adv.ckpt",   "test_set",                      "adv_whitebox_sample.pkl",                            True),
 }
 
 
@@ -191,7 +191,7 @@ def main():
                             "cnn_adv        : attack cnn_adv.ckpt, report only"
                         ))
     parser.add_argument("--num_samples", type=int, default=1000)
-    parser.add_argument("--eps",   type=float, default=20.0)
+    parser.add_argument("--eps",   type=float, default=10)
     parser.add_argument("--alpha", type=float, default=2.0)
     parser.add_argument("--steps", type=int,   default=100)
     parser.add_argument("--out_dir", type=str, default="../images/whitebox")
@@ -257,11 +257,11 @@ def main():
           f"{success_mask.sum().item()}/{len(success_mask)} = {success_rate:.2f}%")
 
     # --- cnn_adv 模式：只报告成功率，直接返回 ----------------------------
-    if eval_only:
-        print(f"[done] test_acc={test_acc:.2f}% | attack_success={success_rate:.2f}%")
-        return
+    # if eval_only:
+    #     print(f"[done] test_acc={test_acc:.2f}% | attack_success={success_rate:.2f}%")
+    #     return
 
-    exit(0)
+    # exit(0)
 
     # --- 3) Save ALL successful adversarial samples to pkl ---------------
     pkl_out = os.path.join(args.pkl_dir, pkl_name)

@@ -44,7 +44,7 @@ def main():
 
     save_path = "../model/cnn_best.ckpt"
     best_dev = 0.0
-    epochs = 25
+    epochs = 15 # 设置为15
     for ep in range(1, epochs + 1):
         classifier.train()
         for x, y in train_loader:

@@ -304,9 +304,9 @@ def run(target, args, device):
           f"{final_success.sum().item()}/{len(final_success)} = {final_rate:.2f}%")
     print(f"[info] total black-box queries = {black_box.num_queries:,}")
 
-    # ── adv 场景：只报告成功率，不保存任何文件 ──────────────────────────────
-    if report_only:
-        return final_rate
+    # # ── adv 场景：只报告成功率，不保存任何文件 ──────────────────────────────
+    # if report_only:
+    #     return final_rate
 
     # ── 保存所有攻击成功的样例为 pkl ────────────────────────────────────────
     pkl_path = os.path.join(args.pkl_dir, pkl_name)
@@ -396,7 +396,7 @@ def main():
         help="'both' runs provided + own; 'adv' attacks cnn_adv.ckpt (report only)"
     )
     parser.add_argument("--num_samples", type=int,   default=1000)
-    parser.add_argument("--eps",         type=float, default=40.0,
+    parser.add_argument("--eps",         type=float, default=20.0,
                         help="Global L_inf budget in pixel units [0,255]")
     parser.add_argument("--mcmc_steps",  type=int,   default=13000,
                         help="Max MCMC iterations per sample")
@@ -413,7 +413,8 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    device = torch.device("cpu")
+    # device = torch.device("cpu")
+    device = torch.device("cuda:4")
     os.makedirs(args.out_dir, exist_ok=True)
     os.makedirs(args.pkl_dir, exist_ok=True)
 
