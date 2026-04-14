@@ -261,6 +261,8 @@ def main():
         print(f"[done] test_acc={test_acc:.2f}% | attack_success={success_rate:.2f}%")
         return
 
+    exit(0)
+
     # --- 3) Save ALL successful adversarial samples to pkl ---------------
     pkl_out = os.path.join(args.pkl_dir, pkl_name)
     success_idx_all = success_mask.nonzero(as_tuple=False).flatten()

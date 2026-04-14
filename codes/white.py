@@ -226,7 +226,8 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    device = torch.device("cpu")
+    # device = torch.device("cpu")
+    device = torch.device('cuda:4')
 
     print(f"[info] ckpt_tag      = {args.ckpt_tag}")
     print(f"[info] checkpoint    = {ckpt_path}")
