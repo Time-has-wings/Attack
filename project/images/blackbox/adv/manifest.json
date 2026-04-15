@@ -1,0 +1,131 @@
+{
+  "scenario": "adv",
+  "black_box_ckpt": "/Users/timehaswings/PKU/2026_spring/深度学习技术与应用/Fashion-MNIST/model/cnn_adv.ckpt",
+  "num_attacked": 1000,
+  "attack": {
+    "type": "MCMC (assignment description + minimal fix)",
+    "acceptance": "always accept if p_new >= p_cur; else accept if u < C(x')[y_target]",
+    "single_step_constraint": "reject if L_inf(x', x^n) > delta_max",
+    "epsilon_pixels": 20.0,
+    "mcmc_steps": 13000,
+    "mcmc_sigma": 4.0,
+    "delta_max": 15.0,
+    "target_mapping": "y -> (y + 1) % 10"
+  },
+  "final_success_rate_percent": 23.0,
+  "black_box_queries": 1225590,
+  "successful_samples_pkl": "adv_blackbox_sample.pkl",
+  "pkl_label_type": "true label (for adversarial training)",
+  "samples": [
+    {
+      "orig_image": "sample_00_orig.png",
+      "adv_image": "sample_00_adv.png",
+      "orig_label": 5,
+      "orig_label_name": "Sandal",
+      "target_label": 6,
+      "target_label_name": "Shirt",
+      "adv_pred": 6,
+      "adv_pred_name": "Shirt",
+      "linf_perturbation_pixels": 20.0
+    },
+    {
+      "orig_image": "sample_01_orig.png",
+      "adv_image": "sample_01_adv.png",
+      "orig_label": 7,
+      "orig_label_name": "Sneaker",
+      "target_label": 8,
+      "target_label_name": "Bag",
+      "adv_pred": 8,
+      "adv_pred_name": "Bag",
+      "linf_perturbation_pixels": 20.0
+    },
+    {
+      "orig_image": "sample_02_orig.png",
+      "adv_image": "sample_02_adv.png",
+      "orig_label": 5,
+      "orig_label_name": "Sandal",
+      "target_label": 6,
+      "target_label_name": "Shirt",
+      "adv_pred": 6,
+      "adv_pred_name": "Shirt",
+      "linf_perturbation_pixels": 20.0
+    },
+    {
+      "orig_image": "sample_03_orig.png",
+      "adv_image": "sample_03_adv.png",
+      "orig_label": 4,
+      "orig_label_name": "Coat",
+      "target_label": 5,
+      "target_label_name": "Sandal",
+      "adv_pred": 5,
+      "adv_pred_name": "Sandal",
+      "linf_perturbation_pixels": 20.0
+    },
+    {
+      "orig_image": "sample_04_orig.png",
+      "adv_image": "sample_04_adv.png",
+      "orig_label": 5,
+      "orig_label_name": "Sandal",
+      "target_label": 6,
+      "target_label_name": "Shirt",
+      "adv_pred": 6,
+      "adv_pred_name": "Shirt",
+      "linf_perturbation_pixels": 20.0
+    },
+    {
+      "orig_image": "sample_05_orig.png",
+      "adv_image": "sample_05_adv.png",
+      "orig_label": 5,
+      "orig_label_name": "Sandal",
+      "target_label": 6,
+      "target_label_name": "Shirt",
+      "adv_pred": 6,
+      "adv_pred_name": "Shirt",
+      "linf_perturbation_pixels": 20.0
+    },
+    {
+      "orig_image": "sample_06_orig.png",
+      "adv_image": "sample_06_adv.png",
+      "orig_label": 7,
+      "orig_label_name": "Sneaker",
+      "target_label": 8,
+      "target_label_name": "Bag",
+      "adv_pred": 8,
+      "adv_pred_name": "Bag",
+      "linf_perturbation_pixels": 20.0
+    },
+    {
+      "orig_image": "sample_07_orig.png",
+      "adv_image": "sample_07_adv.png",
+      "orig_label": 4,
+      "orig_label_name": "Coat",
+      "target_label": 5,
+      "target_label_name": "Sandal",
+      "adv_pred": 5,
+      "adv_pred_name": "Sandal",
+      "linf_perturbation_pixels": 20.0
+    },
+    {
+      "orig_image": "sample_08_orig.png",
+      "adv_image": "sample_08_adv.png",
+      "orig_label": 8,
+      "orig_label_name": "Bag",
+      "target_label": 9,
+      "target_label_name": "Ankle boot",
+      "adv_pred": 9,
+      "adv_pred_name": "Ankle boot",
+      "linf_perturbation_pixels": 20.0
+    },
+    {
+      "orig_image": "sample_09_orig.png",
+      "adv_image": "sample_09_adv.png",
+      "orig_label": 3,
+      "orig_label_name": "Dress",
+      "target_label": 4,
+      "target_label_name": "Coat",
+      "adv_pred": 4,
+      "adv_pred_name": "Coat",
+      "linf_perturbation_pixels": 20.0
+    }
+  ]
+}
