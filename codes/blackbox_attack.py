@@ -47,7 +47,7 @@ CLASS_NAMES = [
 TARGET_CONFIG = {
     "provided": ("../model/cnn.ckpt",      "pkl",      "blackbox_sample.pkl",      False),
     "own":      ("../model/cnn_best.ckpt", "test_set", "best_blackbox_sample.pkl", False),
-    "adv":      ("../model/cnn_adv.ckpt",  "test_set", None,                       True),
+    "adv":      ("../model/cnn_adv.ckpt",  "test_set", "adv_blackbox_sample.pkl",                       True),
 }
 
 
@@ -252,7 +252,7 @@ def save_successful_samples_pkl(adv, true_labels, success_mask, out_path):
 # ---------------------------------------------------------------------------
 # 主运行逻辑
 # ---------------------------------------------------------------------------
-def run(target, args, device):
+def run(target, args, device, num_samples):
     bb_ckpt, sample_source, pkl_name, report_only = TARGET_CONFIG[target]
     out_dir = os.path.join(args.out_dir, target)
 
@@ -269,6 +269,9 @@ def run(target, args, device):
             tmp, device, num=args.num_samples, seed=args.seed
         )
         del tmp
+
+    x_orig = x_orig[:num_samples]
+    y_orig = y_orig[:num_samples]
 
     os.makedirs(out_dir, exist_ok=True)
 
@@ -413,8 +416,8 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    # device = torch.device("cpu")
-    device = torch.device("cuda:4")
+    device = torch.device("cpu")
+    # device = torch.device("cuda:4")
     os.makedirs(args.out_dir, exist_ok=True)
     os.makedirs(args.pkl_dir, exist_ok=True)
 
@@ -423,7 +426,7 @@ def main():
 
     summary = {}
     for t in targets:
-        summary[t] = run(t, args, device)
+        summary[t] = run(t, args, device, args.num_samples)
 
     print("\n=== Summary ===")
     for t, rate in summary.items():
